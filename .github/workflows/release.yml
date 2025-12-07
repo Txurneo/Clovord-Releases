@@ -3,7 +3,7 @@ name: AutoPublisher
 
 on:
   schedule:
-    - cron: '*/15 * * * *'   # alle 10 Minuten
+    - cron: '*/5 * * * *'   # alle 10 Minuten
   workflow_dispatch:
 
 jobs:
