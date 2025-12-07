@@ -1,36 +1,54 @@
+# .github/workflows/publish-release.yml
+name: Publish release after assets uploaded
+
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [created]   # feuert, sobald du den Draft anlegst
+
+concurrency:
+  group: publish-${{ github.event.release.id }}
+  cancel-in-progress: false
 
 jobs:
-  build-and-release:
-    runs-on: windows-latest
+  publish-when-assets-ready:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # nötig fürs Editieren der Releases
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG_NAME: ${{ github.event.release.tag_name }}
+      REPO: ${{ github.repository }}
+      REQUIRED_ASSETS: |
+        Clovord Setup.exe
+        latest.yml
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Build Windows Setup
-        run: npm run publish -- --win
-
-      - name: Ensure draft release exists
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
+      - name: Wait until required assets are uploaded
         run: |
-          gh release view "$TAG" >/dev/null 2>&1 || \
-            gh release create "$TAG" --draft --notes "Automated build for $TAG"
-
-      - name: Upload installer to release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          gh release upload "$TAG" "dist/Clovord Setup.exe" --clobber
-
-      - name: Publish release once assets are up
+          asset_ready() {
+            local name="$1"
+            gh api "repos/$REPO/releases/tags/$TAG_NAME" \
+              --jq ".assets[] | select(.name == \"$name\") | {state:.state,size:.size}" \
+              | jq 'select(.state == "uploaded" and .size > 0)' >/dev/null
+          }
+          for attempt in {1..60}; do
+            missing=0
+            while read -r asset; do
+              [[ -z "$asset" ]] && continue
+              if ! asset_ready "$asset"; then
+                missing=1
+                break
+              fi
+            done <<< "$REQUIRED_ASSETS"
+            if [[ $missing -eq 0 ]]; then
+              echo "All assets uploaded."
+              exit 0
+            fi
+            echo "Waiting for assets… ($attempt/60)"
+            sleep 10
+          done
+          echo "::error::Timed out waiting for required assets."
+          exit 1
+      - name: Publish release
         if: success()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
         run: |
-          gh release edit "$TAG" --draft=false --prerelease=false
+          gh release edit "$TAG_NAME" --draft=false --prerelease=false
