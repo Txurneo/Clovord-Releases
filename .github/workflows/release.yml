@@ -3,7 +3,7 @@ name: Publish ready draft releases
 
 on:
   schedule:
-    - cron: '*/10 * * * *'   # alle 10 Minuten
+    - cron: '*/15 * * * *'   # alle 10 Minuten
   workflow_dispatch:
 
 jobs:
