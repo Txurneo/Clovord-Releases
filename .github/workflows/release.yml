@@ -1,5 +1,5 @@
 # .github/workflows/publish-ready-release.yml
-name: Publish ready draft releases
+name: AutoPublisher
 
 on:
   schedule:
@@ -60,7 +60,13 @@ jobs:
           fi
 
           printf 'ready_tags=%s\n' "${publish_list[*]}" >> "$GITHUB_OUTPUT"
-
+          
+      - name: Fail when nothing was ready
+        if: steps.check.outputs.ready_tags == ''
+        run: |
+          echo "::error ::No new releases found to publish :("
+          exit 1
+          
       - name: Publish all ready drafts
         if: steps.check.outputs.ready_tags != ''
         run: |
