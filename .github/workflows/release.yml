@@ -16,7 +16,7 @@ jobs:
       OWNER: ${{ github.repository_owner }}
       REPO: ${{ github.repository }}
       REQUIRED_ASSETS: |
-        Clovord Setup.exe
+        Clovord-Setup-
         latest.yml
     steps:
       - name: Look for drafts that have all required assets
@@ -38,7 +38,7 @@ jobs:
             missing=0
             while read -r asset; do
               [ -z "$asset" ] && continue
-              match=$(echo "$assets" | jq --arg name "$asset" 'map(select(.name == $name and .state == "uploaded" and .size > 0)) | length')
+              match=$(echo "$assets" | jq --arg pattern "$asset" 'map(select(.name | startswith($pattern) and .state == "uploaded" and .size > 0)) | length')
               if [ "$match" -eq 0 ]; then
                 missing=1
                 echo "Still waiting for asset $asset in $tag"
