@@ -3,7 +3,7 @@ name: Auto publish Clovord release when assets are ready
 on:
   # Wird ausgelöst, wenn du einen Release erstellst oder bearbeitest
   release:
-    types: [created, edited]
+    types: [created]
 
   # Optional: Manuell auslösbar, falls du mal debuggen willst
   workflow_dispatch:
