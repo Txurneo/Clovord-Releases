@@ -16,7 +16,7 @@ jobs:
       OWNER: ${{ github.repository_owner }}
       REPO: ${{ github.repository }}
       REQUIRED_ASSETS: |
-        Clovord-Setup-
+        Clovord-Setup.exe
         latest.yml
     steps:
       - uses: actions/checkout@v4
