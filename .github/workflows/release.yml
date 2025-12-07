@@ -1,55 +1,66 @@
-# .github/workflows/publish-release.yml
-name: Publish release after assets uploaded
+# .github/workflows/publish-ready-release.yml
+name: Publish ready draft releases
 
 on:
-  release:
-    types: [created, edited]   # feuert, sobald du den Draft anlegst
-
-concurrency:
-  group: publish-${{ github.event.release.id }}
-  cancel-in-progress: false
+  schedule:
+    - cron: '*/10 * * * *'       # alle 5 Minuten
+  workflow_dispatch:
 
 jobs:
-  publish-when-assets-ready:
-    if: github.event.release.draft == true
+  publish-ready:
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # nötig fürs Editieren der Releases
+      contents: write           # nötig für gh release edit
     env:
       GH_TOKEN: ${{ github.token }}
-      TAG_NAME: ${{ github.event.release.tag_name }}
+      OWNER: ${{ github.repository_owner }}
       REPO: ${{ github.repository }}
       REQUIRED_ASSETS: |
         Clovord Setup.exe
         latest.yml
     steps:
-      - name: Wait until required assets are uploaded
+      - name: Look for drafts that have all required assets
+        id: check
         run: |
-          asset_ready() {
-            local name="$1"
-            gh api "repos/$REPO/releases/tags/$TAG_NAME" \
-              --jq ".assets[] | select(.name == \"$name\") | {state:.state,size:.size}" \
-              | jq 'select(.state == "uploaded" and .size > 0)' >/dev/null
-          }
-          for attempt in {1..60}; do
+          publish_list=""
+          drafts=$(gh api "repos/$REPO/releases" --paginate --jq '.[] | select(.draft == true) | {id: .id, tag_name: .tag_name, assets: [.assets[] | {name: .name, state: .state, size: .size}] }')
+
+          if [ -z "$drafts" ]; then
+            echo "No draft releases."
+            exit 0
+          fi
+
+          while read -r draft; do
+            [ -z "$draft" ] && continue
+            tag=$(echo "$draft" | jq -r '.tag_name')
+            assets=$(echo "$draft" | jq -r '.assets')
+
             missing=0
             while read -r asset; do
-              [[ -z "$asset" ]] && continue
-              if ! asset_ready "$asset"; then
+              [ -z "$asset" ] && continue
+              match=$(echo "$assets" | jq --arg name "$asset" 'map(select(.name == $name and .state == "uploaded" and .size > 0)) | length')
+              if [ "$match" -eq 0 ]; then
                 missing=1
+                echo "Still waiting for asset $asset in $tag"
                 break
               fi
             done <<< "$REQUIRED_ASSETS"
-            if [[ $missing -eq 0 ]]; then
-              echo "All assets uploaded."
-              exit 0
+
+            if [ "$missing" -eq 0 ]; then
+              publish_list="$publish_list $tag"
             fi
-            echo "Waiting for assets… ($attempt/60)"
-            sleep 10
-          done
-          echo "::error::Timed out waiting for required assets."
-          exit 1
-      - name: Publish release
-        if: success()
+          done <<< "$(echo "$drafts" | jq -c '.')" 
+
+          if [ -z "$publish_list" ]; then
+            exit 0
+          fi
+
+          echo "ready_tags=$publish_list" >> $GITHUB_OUTPUT
+
+      - name: Publish all ready drafts
+        if: steps.check.outputs.ready_tags != ''
         run: |
-          gh release edit "$TAG_NAME" --draft=false --prerelease=false
+          for tag in ${{ steps.check.outputs.ready_tags }}; do
+            echo "Publishing $tag"
+            gh release edit "$tag" --draft=false --prerelease=false
+          done
