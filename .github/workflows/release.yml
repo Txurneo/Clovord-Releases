@@ -19,6 +19,7 @@ jobs:
         Clovord-Setup-
         latest.yml
     steps:
+      - uses: actions/checkout@v4
       - name: Look for drafts that have all required assets
         id: check
         run: |
