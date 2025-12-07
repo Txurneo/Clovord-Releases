@@ -1,0 +1,63 @@
+name: Auto publish Clovord release when assets are ready
+
+on:
+  # Wird ausgelöst, wenn du einen Release erstellst oder bearbeitest
+  release:
+    types: [created, edited]
+
+  # Optional: Manuell auslösbar, falls du mal debuggen willst
+  workflow_dispatch:
+
+jobs:
+  auto-publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Decide whether to publish this release
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const release = context.payload.release;
+            core.info(`Handling release: ${release.tag_name} (id=${release.id})`);
+            core.info(`Draft: ${release.draft}, Prerelease: ${release.prerelease}`);
+
+            // 1) Nur Draft-Releases automatisch behandeln
+            if (!release.draft) {
+              core.info('Release ist bereits veröffentlicht oder kein Draft – nichts zu tun.');
+              return;
+            }
+
+            // 2) Prüfen, ob die erwarteten Assets dran hängen
+            const assets = release.assets || [];
+            core.info(`Aktuelle Asset-Anzahl: ${assets.length}`);
+
+            // Beispiel: wir erwarten mindestens eine .exe für den Installer
+            const exeAssets = assets.filter(a => a.name.endsWith('.exe'));
+            if (exeAssets.length === 0) {
+              core.info('Noch keine .exe-Assets gefunden – Release bleibt Draft.');
+              return;
+            }
+
+            // Optional: Minimal-Größe (z.B. 10MB) um offensichtliche Fehler zu vermeiden
+            const minSizeBytes = 10 * 1024 * 1024; // 10 MB
+            const tooSmall = exeAssets.filter(a => a.size < minSizeBytes);
+
+            if (tooSmall.length > 0) {
+              core.info('Mindestens ein .exe-Asset ist kleiner als 10MB – eventuell korrupt, Release bleibt Draft.');
+              tooSmall.forEach(a => core.info(`Asset ${a.name} hat nur ${a.size} Bytes`));
+              return;
+            }
+
+            core.info('Alle Checks ok – Release wird veröffentlicht ✅');
+
+            // 3) Release veröffentlichen (draft -> false)
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: release.id,
+              draft: false,
+              prerelease: false
+            });
+
+            core.info('Release erfolgreich veröffentlicht!');
